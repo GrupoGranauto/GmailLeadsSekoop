@@ -12,6 +12,10 @@ from colorama import init, Fore
 from email.header import decode_header
 from datetime import datetime, timedelta, timezone
 from google.oauth2.service_account import Credentials
+from dotenv import load_dotenv
+
+# Cargar variables de entorno desde archivo .env local si existe
+load_dotenv()
 
 init(autoreset=True)
 
@@ -19,15 +23,15 @@ init(autoreset=True)
 # ── CONFIGURACIONES (SE CARGAN DE LEY DE ENV O DE COPIA LOCAL) ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # ====================================================================================================================================================================================================================
 
-GMAIL_USER               = os.getenv("GMAIL_USER", "bdccenter@grupogranauto.mx")
-GMAIL_APP_PASS           = os.getenv("GMAIL_APP_PASS", "ztmv dnfb xpfn ehmc")
+GMAIL_USER               = os.getenv("GMAIL_USER")
+GMAIL_APP_PASS           = os.getenv("GMAIL_APP_PASS")
 IMAP_SERVER              = os.getenv("IMAP_SERVER", "imap.gmail.com")
 SUBJECT_FILTER           = os.getenv("SUBJECT_FILTER", "DealerOn")
-CREDS_PATH               = os.getenv("CREDS_PATH", r"G:\Unidades compartidas\BDC Grupo Granauto\BDC Business Intelligence\credenciales\credencialesAI.json")
-SPREADSHEET_ID           = os.getenv("GOOGLE_SHEET_ID", "1xfIviHiUYqSd_oo9mZvMoSryOH9AZHHlDcG4Bp8HzmU")
+CREDS_PATH               = os.getenv("CREDS_PATH", "credentials.json")
+SPREADSHEET_ID           = os.getenv("GOOGLE_SHEET_ID")
 SHEET_NAME               = os.getenv("SHEET_NAME", "Sheet1")
-WHATSAPP_ACCESS_TOKEN    = os.getenv("META_ACCESS_TOKEN", "EAAOu5Dlh14YBQxJJfrJhSajZAkXhmYNrGErFJJpA1I8aaImsEGwHRm1xd6nFq1iEJfg1JGLH9TJFnjJ7rxFZAphQI19zmgozZCG9eSlyOWwTrzjavLkuqcboa3wsrmfky9I1QpOvakjUy6ZCGpLCmKYEg0QOZCFZBbs2S3D0Q2H120uOY5yRA3ju20Sh7Rj50GhAZDZD")
-WHATSAPP_PHONE_NUMBER_ID = os.getenv("META_PHONE_NUMBER_ID", "1073091922543993")
+WHATSAPP_ACCESS_TOKEN    = os.getenv("META_ACCESS_TOKEN")
+WHATSAPP_PHONE_NUMBER_ID = os.getenv("META_PHONE_NUMBER_ID")
 WHATSAPP_TEMPLATE_NAME   = os.getenv("WHATSAPP_TEMPLATE_NAME", "dealeron_lead_notification")
 
 # Receptores de notificaciones de WhatsApp (se pueden separar por comas en la variable)
@@ -35,7 +39,7 @@ recipients_env = os.getenv("WHATSAPP_RECIPIENTS")
 if recipients_env:
     WHATSAPP_RECIPIENTS = [num.strip() for num in recipients_env.split(",") if num.strip()]
 else:
-    WHATSAPP_RECIPIENTS = ["6623587553", "6623254234", "6623399588", "6627040850", "3221748732"]
+    WHATSAPP_RECIPIENTS = []
 
 OUTPUT_CSV = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dealeron_leads.csv")
 
@@ -403,6 +407,27 @@ def is_active_time(dt):
     return (w1_start <= t < w1_end) or (w2_start <= t < w2_end)
 
 def main():
+    # Validar variables de entorno requeridas
+    missing_vars = []
+    if not GMAIL_USER:
+        missing_vars.append("GMAIL_USER")
+    if not GMAIL_APP_PASS:
+        missing_vars.append("GMAIL_APP_PASS")
+    if not SPREADSHEET_ID:
+        missing_vars.append("GOOGLE_SHEET_ID")
+    
+    # Validar credenciales de Google
+    creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+    if not creds_json and not (CREDS_PATH and os.path.exists(CREDS_PATH)):
+        missing_vars.append("GOOGLE_CREDENTIALS_JSON (o archivo de credenciales local en CREDS_PATH)")
+        
+    if missing_vars:
+        print(Fore.RED + "\n[ERROR] Faltan variables de entorno obligatorias para iniciar el worker:")
+        for var in missing_vars:
+            print(Fore.RED + f"  - {var}")
+        print(Fore.YELLOW + "\nPor favor, configura estas variables en tu panel de Railway (o en un archivo .env local) para poder iniciar.")
+        sys.exit(1)
+
     print(Fore.CYAN + "\n=== GmailLeadsCSV — Extractor de Leads DealerOn (Modo Continuo) ===")
     print(Fore.CYAN + f"Cuenta  : {GMAIL_USER}")
     print(Fore.CYAN + f"Asunto  : {SUBJECT_FILTER}")
