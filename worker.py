@@ -17,6 +17,13 @@ from dotenv import load_dotenv
 # Cargar variables de entorno desde archivo .env local si existe
 load_dotenv()
 
+# Zona horaria (offset de UTC, por defecto -7 para Hermosillo)
+TZ_OFFSET = int(os.getenv("TZ_OFFSET", "-7"))
+TZ_LOCAL = timezone(timedelta(hours=TZ_OFFSET))
+
+def get_local_now():
+    return datetime.now(timezone.utc).astimezone(TZ_LOCAL)
+
 init(autoreset=True)
 
 # ====================================================================================================================================================================================================================
@@ -142,7 +149,7 @@ def parse_email_body(body, received_date):
     return row
 
 def build_imap_date_range(first_run=True):
-    today = datetime.now().date()
+    today = get_local_now().date()
     if first_run:
         if today.weekday() == 0:  # Lunes, buscar desde el sábado (hace 2 días)
             since_date = today - timedelta(days=2)
@@ -304,7 +311,7 @@ def write_to_sheets(rows):
     filled_existing = [r for r in existing if any(cell.strip() for cell in r[:10])]
     existing_keys = set()
     if not filled_existing:
-        print(Fore.YELLOW + f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ADVERTENCIA] La hoja está completamente vacía. Escribiendo desde A2.")
+        print(Fore.YELLOW + f"[{get_local_now().strftime('%Y-%m-%d %H:%M:%S')}] [ADVERTENCIA] La hoja está completamente vacía. Escribiendo desde A2.")
         next_row = 2
     else:
         try:
@@ -336,43 +343,42 @@ def write_to_sheets(rows):
             ws.add_rows(rows_to_add)
         range_name = f"A{next_row}"
         ws.update(range_name=range_name, values=data_rows, value_input_option="USER_ENTERED")
-        print(Fore.GREEN + f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [Sheets] {len(data_rows)} registro(s) nuevo(s) agregado(s).")
+        print(Fore.GREEN + f"[{get_local_now().strftime('%Y-%m-%d %H:%M:%S')}] [Sheets] {len(data_rows)} registro(s) nuevo(s) agregado(s).")
         send_whatsapp_alerts(new_leads)
         send_whatsapp_to_clients(new_leads)
     else:
-        print(Fore.YELLOW + f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [Sheets] No hay registros nuevos para agregar (todos ya existen).")
+        print(Fore.YELLOW + f"[{get_local_now().strftime('%Y-%m-%d %H:%M:%S')}] [Sheets] No hay registros nuevos para agregar (todos ya existen).")
 
 def run_sync(first_run=True):
     since_str, before_str = build_imap_date_range(first_run)
-    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    now_str = get_local_now().strftime('%Y-%m-%d %H:%M:%S')
     print(Fore.CYAN + f"[{now_str}] [Gmail] Buscando correos del {since_str} al {before_str}...")
     sys.stdout.flush()
     try:
         mail = imaplib.IMAP4_SSL(IMAP_SERVER)
         mail.login(GMAIL_USER, GMAIL_APP_PASS)
     except imaplib.IMAP4.error as e:
-        print(Fore.RED + f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] No se pudo conectar a Gmail: {e}")
+        print(Fore.RED + f"[{get_local_now().strftime('%Y-%m-%d %H:%M:%S')}] [ERROR] No se pudo conectar a Gmail: {e}")
         return False
     mail.select("INBOX")
     search_criteria = (f'(SUBJECT "{SUBJECT_FILTER}" SINCE "{since_str}" BEFORE "{before_str}")')
     status, data = mail.search(None, search_criteria)
     if status != "OK" or not data[0]:
         mail.logout()
-        print(Fore.YELLOW + f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [Gmail] No se encontraron correos nuevos.")
+        print(Fore.YELLOW + f"[{get_local_now().strftime('%Y-%m-%d %H:%M:%S')}] [Gmail] No se encontraron correos nuevos.")
         return True
     msg_ids = data[0].split()
     rows = []
     for num, msg_id in enumerate(msg_ids, start=1):
         status, msg_data = mail.fetch(msg_id, "(RFC822)")
         if status != "OK":
-            print(Fore.RED + f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [{num}] Error al obtener correo ID {msg_id.decode()}")
+            print(Fore.RED + f"[{get_local_now().strftime('%Y-%m-%d %H:%M:%S')}] [{num}] Error al obtener correo ID {msg_id.decode()}")
             continue
         msg = email.message_from_bytes(msg_data[0][1])
         date_header = msg.get("Date", "")
         try:
             parsed_date   = email.utils.parsedate_to_datetime(date_header)
-            tz_hermosillo = timezone(timedelta(hours=-7))
-            received_date = parsed_date.astimezone(tz_hermosillo).strftime("%Y-%m-%d %H:%M:%S")
+            received_date = parsed_date.astimezone(TZ_LOCAL).strftime("%Y-%m-%d %H:%M:%S")
         except Exception:
             received_date = date_header
         body = get_text_body(msg)
@@ -383,7 +389,7 @@ def run_sync(first_run=True):
         rows.append(row)
     mail.logout()
     if not rows:
-        print(Fore.YELLOW + f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [Gmail] No se encontraron leads válidos (excluidos/seminuevos).")
+        print(Fore.YELLOW + f"[{get_local_now().strftime('%Y-%m-%d %H:%M:%S')}] [Gmail] No se encontraron leads válidos (excluidos/seminuevos).")
         return True
     with open(OUTPUT_CSV, mode="w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=KEYS_ORDER, extrasaction="ignore")
@@ -438,7 +444,7 @@ def main():
     
     while True:
         try:
-            now = datetime.now()
+            now = get_local_now()
             active = is_active_time(now)
             
             if active:
@@ -461,7 +467,7 @@ def main():
             sys.stdout.flush()
             
         # Calcular los segundos restantes para alinearse con el segundo 00 del siguiente minuto
-        now = datetime.now()
+        now = get_local_now()
         sleep_duration = 60.0 - now.second - (now.microsecond / 1000000.0) + 0.1
         time.sleep(sleep_duration)
 
